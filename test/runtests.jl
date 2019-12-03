@@ -107,26 +107,9 @@ function test_logger()
         @test stat(rolledfile(filepath, 1)).size > 0
         @test stat(rolledfile(filepath, 1)).size < 1000  # compressed
 
-        # roll twice
-        with_logger(logger) do
-            for count in 1:10
-                @info(logstr)
-            end
-        end
-        @test isfile(filepath)
-        @test isfile(rolledfile(filepath, 1))
-        @test isfile(rolledfile(filepath, 2))
-        @test !isfile(rolledfile(filepath, 3))
-        @test stat(filepath).size > 0
-        @test stat(filepath).size < 1000
-        @test stat(rolledfile(filepath, 1)).size > 0
-        @test stat(rolledfile(filepath, 1)).size < 1000  # compressed
-        @test stat(rolledfile(filepath, 2)).size > 0
-        @test stat(rolledfile(filepath, 2)).size < 1000  # compressed
-
         # roll 4 times
         with_logger(logger) do
-            for count in 1:20
+            for count in 1:40
                 @info(logstr)
             end
         end
