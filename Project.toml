@@ -7,6 +7,7 @@ version = "0.1.0"
 
 [compat]
 julia = "1"
+CodecZlib = "0.6"
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
