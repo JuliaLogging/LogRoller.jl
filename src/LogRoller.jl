@@ -6,7 +6,7 @@ using CodecZlib
 using Logging
 
 import Logging: shouldlog, min_enabled_level, catch_exceptions, handle_message
-import Base: write
+import Base: write, close
 export RollingLogger, RollingFileWriter
 
 const BUFFSIZE = 1024*16  # try and read 16K pages when possible
@@ -33,6 +33,8 @@ mutable struct RollingFileWriter <: IO
         new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock())
     end
 end
+
+close(io::RollingFileWriter) = close(io.stream)
 
 write(io::RollingFileWriter, byte::UInt8) = _write(io, byte)
 write(io::RollingFileWriter, str::Union{SubString{String}, String}) = _write(io, str)
@@ -106,6 +108,8 @@ function RollingLogger(filename::String, sizelimit::Int, nfiles::Int, level=Logg
     stream = RollingFileWriter(filename, sizelimit, nfiles)
     RollingLogger(stream, level, Dict{Any,Int}())
 end
+
+close(logger::RollingLogger) = close(logger.stream)
 
 shouldlog(logger::RollingLogger, level, _module, group, id) = get(logger.message_limits, id, 1) > 0
 

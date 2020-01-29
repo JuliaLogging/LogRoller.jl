@@ -67,6 +67,9 @@ function test_filewriter()
         @test stat(rolledfile(filepath, 2)).size < 1000  # compressed
         @test stat(rolledfile(filepath, 3)).size > 0
         @test stat(rolledfile(filepath, 3)).size < 1000  # compressed
+
+        close(io)
+        @test !isopen(io.stream)
     end
 end
 
@@ -126,6 +129,9 @@ function test_logger()
         @test stat(rolledfile(filepath, 2)).size < 1000  # compressed
         @test stat(rolledfile(filepath, 3)).size > 0
         @test stat(rolledfile(filepath, 3)).size < 1000  # compressed
+
+        close(logger)
+        @test !isopen(logger.stream.stream)
     end
 end
 
