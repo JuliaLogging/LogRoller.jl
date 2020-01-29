@@ -1,7 +1,7 @@
 # LogRoller.jl
 
-[![Build Status](https://travis-ci.org/tanmaykm/LogRoller.jl.png)](https://travis-ci.org/tanmaykm/LogRoller.jl)
-
+[![Build Status](https://travis-ci.org/tanmaykm/LogRoller.jl.png)](https://travis-ci.org/tanmaykm/LogRoller.jl) 
+[![Build Status](https://ci.appveyor.com/api/projects/status/github/tanmaykm/LogRoller.jl?branch=master&svg=true)](https://ci.appveyor.com/project/tanmaykm/logroller-jl/branch/master) 
 [![Coverage Status](https://coveralls.io/repos/github/tanmaykm/LogRoller.jl/badge.svg?branch=master)](https://coveralls.io/github/tanmaykm/LogRoller.jl?branch=master)
 
 Provides:
