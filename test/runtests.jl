@@ -135,5 +135,42 @@ function test_logger()
     end
 end
 
+function test_process_streams()
+    mktempdir() do logdir
+        filename = "test.log"
+        filepath = joinpath(logdir, filename)
+        @test !isfile(filepath)
+        @test !isfile(rolledfile(filepath, 1))
+
+        io = RollingFileWriter(filepath, 1000, 3)
+        @test isfile(filepath)
+
+        #procstream = rawhandle(io)
+        #@test isa(procstream, Base.PipeEndpoint)
+
+        julia = joinpath(Sys.BINDIR, "julia")
+        cmd = pipeline(`$julia -e 'println("-"^100)'`; stdout=io, stderr=io)
+        run(cmd)
+
+        @test !isfile(rolledfile(filepath, 1))
+
+        for count in 1:10
+            run(cmd)
+        end
+        @test isfile(filepath)
+        @test isfile(rolledfile(filepath, 1))
+        @test !isfile(rolledfile(filepath, 2))
+
+        @test io.procstream !== nothing
+        @test io.procstreamer !== nothing
+        @test !istaskdone(io.procstreamer)
+
+        close(io)
+        @test io.procstream === nothing
+        @test io.procstreamer === nothing
+    end
+end
+
 test_filewriter()
 test_logger()
+test_process_streams()
