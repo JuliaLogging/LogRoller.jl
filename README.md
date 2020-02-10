@@ -10,7 +10,7 @@ Provides:
 
 ## `RollingFileWriter`
 
-A file writer that implements the `IO` interface, but only provides `write` methods.
+A file writer that implements the `IO` interface, but only provides `write` methods. It also implements a transparent wrapper which allows it to be used to stream `stdin` and `stdout` of spawned processes into it.
 
 Constructor parameters:
 - `filename`: name (including path) of file to log into
@@ -52,6 +52,16 @@ julia> write(io, b"hello world\n")
 shell> cat /tmp/mylog.log
 hello roller
 hello world
+```
+
+Using `RollingFileWriter` with `stdout` and `stderr` streams
+
+```julia
+julia> using LogRoller
+
+julia> io = RollingFileWriter("/tmp/mylog.log", 1000, 3);
+
+julia> run(pipeline(`myshellscript.sh`; stdout=io, stderr=io));
 ```
 
 Using `RollingLogger`

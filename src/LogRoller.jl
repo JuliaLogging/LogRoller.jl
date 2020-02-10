@@ -6,7 +6,7 @@ using CodecZlib
 using Logging
 
 import Logging: shouldlog, min_enabled_level, catch_exceptions, handle_message
-import Base: write, close
+import Base: write, close, rawhandle
 export RollingLogger, RollingFileWriter
 
 const BUFFSIZE = 1024*16  # try and read 16K pages when possible
@@ -26,15 +26,26 @@ mutable struct RollingFileWriter <: IO
     filesize::Int
     stream::IO
     lck::ReentrantLock
+    procstream::Union{Nothing,Pipe}
+    procstreamer::Union{Nothing,Task}
 
     function RollingFileWriter(filename::String, sizelimit::Int, nfiles::Int)
         stream = open(filename, "a")
         filesize = stat(stream).size
-        new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock())
+        new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing)
     end
 end
 
-close(io::RollingFileWriter) = close(io.stream)
+function close(io::RollingFileWriter)
+    if io.procstream !== nothing
+        close(io.procstream)
+        lock(io.lck) do
+            io.procstream = nothing
+            io.procstreamer = nothing
+        end
+    end
+    close(io.stream)
+end
 
 write(io::RollingFileWriter, byte::UInt8) = _write(io, byte)
 write(io::RollingFileWriter, str::Union{SubString{String}, String}) = _write(io, str)
@@ -138,6 +149,35 @@ function handle_message(logger::RollingLogger, level, message, _module, group, i
     println(iob, "└ @ ", something(_module, "nothing"), " ", something(filepath, "nothing"), ":", something(line, "nothing"))
     write(logger.stream, take!(buf))
     nothing
+end
+
+function stream_process_logs(writer::RollingFileWriter)
+    try
+        bytes = readavailable(writer.procstream)
+        while !isempty(bytes)
+            write(writer, bytes)
+            bytes = readavailable(writer.procstream)
+        end
+    finally
+        close(writer.procstream)
+        lock(writer.lck) do
+            writer.procstream = nothing
+            writer.procstreamer = nothing
+        end
+    end
+end
+
+function rawhandle(writer::RollingFileWriter)
+    lock(writer.lck) do
+        if (writer.procstream === nothing) || !isopen(Base.pipe_writer(writer.procstream))
+            writer.procstream = Pipe()
+            Base.link_pipe!(writer.procstream)
+            writer.procstreamer = @async begin
+                stream_process_logs(writer)
+            end
+        end
+        return rawhandle(Base.pipe_writer(writer.procstream))
+    end
 end
 
 end # module
