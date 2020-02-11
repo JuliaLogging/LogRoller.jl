@@ -5,8 +5,10 @@
 [![Coverage Status](https://coveralls.io/repos/github/tanmaykm/LogRoller.jl/badge.svg?branch=master)](https://coveralls.io/github/tanmaykm/LogRoller.jl?branch=master)
 
 Provides:
-- `RollingFileWriter` - `IO` implementation to a file writer that rotates files based on file size
-- `RollingLogger` - `AbstractLogger` implementation that uses a `RollingFileWriter` for output
+- `RollingFileWriter` - `IO` implementation to a file writer that rotates files based on file size.
+- `RollingLogger` - `AbstractLogger` implementation that uses a `RollingFileWriter` for output.
+- `postrotate` - Registers a callback function to be invoked with the rotated file name just after the current log file is rotated. The file name of the rotated file is passed as an argument. The function is blocking and so any lengthy operation that needs to be done should be done asynchronously.
+
 
 ## `RollingFileWriter`
 
@@ -70,6 +72,11 @@ Using `RollingLogger`
 julia> using Logging, LogRoller
 
 julia> logger = RollingLogger("/tmp/mylog.log", 1000, 3, Logging.Debug);
+
+julia> postrotate(logger) do rotatedfile
+           # e.g. code to upload file to permanent store
+           # ...
+       end
 
 julia> with_logger(logger) do
        @info("Hello RollingLogger")
