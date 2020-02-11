@@ -7,7 +7,7 @@ using Logging
 
 import Logging: shouldlog, min_enabled_level, catch_exceptions, handle_message
 import Base: write, close, rawhandle
-export RollingLogger, RollingFileWriter
+export RollingLogger, RollingFileWriter, postrotate
 
 const BUFFSIZE = 1024*16  # try and read 16K pages when possible
 
@@ -28,14 +28,29 @@ mutable struct RollingFileWriter <: IO
     lck::ReentrantLock
     procstream::Union{Nothing,Pipe}
     procstreamer::Union{Nothing,Task}
+    postrotate::Union{Nothing,Function}
 
     function RollingFileWriter(filename::String, sizelimit::Int, nfiles::Int)
         stream = open(filename, "a")
         filesize = stat(stream).size
-        new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing)
+        new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing, nothing)
     end
 end
 
+"""
+Register a function to be called with the rotated file name just after the current log file is rotated.
+The file name of the rotated file is passed as an argument. The function is blocking and so any lengthy
+operation that needs to be done should be done asynchronously.
+"""
+function postrotate(fn::Function, io::RollingFileWriter)
+    io.postrotate = fn
+    nothing
+end
+
+"""
+Close any open file handle and streams.
+A closed object must not be used again.
+"""
 function close(io::RollingFileWriter)
     if io.procstream !== nothing
         close(io.procstream)
@@ -47,6 +62,9 @@ function close(io::RollingFileWriter)
     close(io.stream)
 end
 
+"""
+Write into the underlying stream, rolling over as and when necessary.
+"""
 write(io::RollingFileWriter, byte::UInt8) = _write(io, byte)
 write(io::RollingFileWriter, str::Union{SubString{String}, String}) = _write(io, str)
 write(io::RollingFileWriter, buff::Vector{UInt8}) = _write(io, buff)
@@ -103,6 +121,10 @@ function rotate_file(io::RollingFileWriter)
     end
     io.stream = open(io.filename, "w")
     io.filesize = 0
+
+    # call postrotate hook if one is registered
+    (io.postrotate === nothing) || io.postrotate(nthlogfile)
+
     nothing
 end
 
@@ -120,6 +142,17 @@ function RollingLogger(filename::String, sizelimit::Int, nfiles::Int, level=Logg
     RollingLogger(stream, level, Dict{Any,Int}())
 end
 
+"""
+Register a function to be called with the rotated file name just after the current log file is rotated.
+The file name of the rotated file is passed as an argument. The function is blocking and so any lengthy
+operation that needs to be done should be done asynchronously.
+"""
+postrotate(fn::Function, io::RollingLogger) = postrotate(fn, io.stream)
+
+"""
+Close any open file handle and streams.
+A closed object must not be used again.
+"""
 close(logger::RollingLogger) = close(logger.stream)
 
 shouldlog(logger::RollingLogger, level, _module, group, id) = get(logger.message_limits, id, 1) > 0
