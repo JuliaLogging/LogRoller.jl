@@ -1,4 +1,4 @@
-using LogRoller, Test, Logging
+using LogRoller, Test, Logging, Dates
 
 rolledfile(path, n) = string(path, "_", n, ".gz")
 
@@ -214,7 +214,42 @@ function test_postrotate()
     end
 end
 
+function test_timestamp_handling()
+    mktempdir() do logdir
+        filename = "test.log"
+        filepath = joinpath(logdir, filename)
+
+        logger = RollingLogger(filepath, 1000, 3)
+        testdt = DateTime(2000, 1, 1, 1, 1, 1, 1)
+        timenow = time()
+        dt_from_time = Dates.unix2datetime(timenow)
+        with_logger(logger) do
+            @info("without_timestamp")
+            @info("without_timestamp", testarg=1)
+            @info("with_timestamp", time=timenow)
+            @info("with_timestamp", time=testdt)
+            @info("with_timestamp", time=testdt, testarg=1)
+            @test isfile(filepath)
+        end
+        filecontents = readlines(filepath)
+        @test length(filecontents) == 12
+        dates = DateTime[]
+        for line in filecontents
+            if startswith(line, "┌ Info: ")
+                parts = split(line, ' ')
+                @test length(parts) == 4
+                push!(dates, DateTime(strip(parts[3])[1:(end-1)]))
+            end
+        end
+        @test length(dates) == 5
+        @test dates[3] == dt_from_time
+        @test dates[4] == testdt
+        @test dates[5] == testdt
+    end
+end
+
 test_filewriter()
 test_logger()
 test_process_streams()
 test_postrotate()
+test_timestamp_handling()

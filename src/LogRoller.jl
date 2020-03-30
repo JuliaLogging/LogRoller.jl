@@ -129,17 +129,18 @@ function rotate_file(io::RollingFileWriter)
 end
 
 """
-RollingLogger(filename, sizelimit, nfiles, min_level=Info)
+RollingLogger(filename, sizelimit, nfiles, min_level=Info; timestamp_identifier::Symbol=:time)
 Log into a log file. Rotate log file based on file size. Compress rotated logs.
 """
 mutable struct RollingLogger <: AbstractLogger
     stream::RollingFileWriter
     min_level::LogLevel
     message_limits::Dict{Any,Int}
+    timestamp_identifier::Symbol
 end
-function RollingLogger(filename::String, sizelimit::Int, nfiles::Int, level=Logging.Info)
+function RollingLogger(filename::String, sizelimit::Int, nfiles::Int, level=Logging.Info; timestamp_identifier::Symbol=:time)
     stream = RollingFileWriter(filename, sizelimit, nfiles)
-    RollingLogger(stream, level, Dict{Any,Int}())
+    RollingLogger(stream, level, Dict{Any,Int}(), timestamp_identifier)
 end
 
 """
@@ -161,6 +162,23 @@ min_enabled_level(logger::RollingLogger) = logger.min_level
 
 catch_exceptions(logger::RollingLogger) = false
 
+function get_timestamp(logger::RollingLogger, kwargs)
+    try
+        for (key, val) in kwargs
+            if key === logger.timestamp_identifier
+                if isa(val, DateTime)
+                    return (val, true)
+                else
+                    return (Dates.unix2datetime(Float64(val)), true)
+                end
+            end
+        end
+    catch
+        # could not convert val to DateTime, fallback to now()
+    end
+    (now(), false)
+end
+
 function handle_message(logger::RollingLogger, level, message, _module, group, id, filepath, line; maxlog=nothing, kwargs...)
     if maxlog !== nothing && maxlog isa Integer
         remaining = get!(logger.message_limits, id, maxlog)
@@ -170,13 +188,14 @@ function handle_message(logger::RollingLogger, level, message, _module, group, i
     buf = IOBuffer()
     iob = IOContext(buf, logger.stream)
     levelstr = level == Logging.Warn ? "Warning" : string(level)
-    timestr = DateTime(now())
+    timestamp, kwarg_timestamp = get_timestamp(logger, kwargs)
     msglines = split(chomp(string(message)), '\n')
-    println(iob, "┌ ", levelstr, ": ", timestr, ": ", msglines[1])
+    println(iob, "┌ ", levelstr, ": ", timestamp, ": ", msglines[1])
     for i in 2:length(msglines)
         println(iob, "│ ", msglines[i])
     end
     for (key, val) in kwargs
+        kwarg_timestamp && (key === logger.timestamp_identifier) && continue
         println(iob, "│   ", key, " = ", val)
     end
     println(iob, "└ @ ", something(_module, "nothing"), " ", something(filepath, "nothing"), ":", something(line, "nothing"))
