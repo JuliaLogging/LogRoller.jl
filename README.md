@@ -89,3 +89,35 @@ hello world
 └ @ Main REPL[11]:2
 ```
 
+RollingLogger automatically adds the current timestamp to the log line. A timestamp can also be optionally provided in the log message keywords. By default, RollingLogger considers a keyword arg with a name `time` to indicate the timestamp of the log message. It uses the value specified in that as the timestamp if it is found to be either a `DateTime` or `Float64` (UNIX time). If a timestamp is detected in the keywords, it is used as the timestamp for the message and removed from the keywords.
+
+```julia
+julia> using Logging, LogRoller, Dates
+
+julia> logger = RollingLogger("/tmp/mylog.log", 1000, 3, Logging.Debug);
+
+julia> with_logger(logger) do
+       @info("log with timestamp", time=DateTime(2010, 1, 1, 1, 1, 1))
+       end
+
+shell> cat /tmp/mylog.log
+┌ Info: 2010-01-01T01:01:01: log with timestamp
+└ @ Main REPL[8]:2
+```
+
+The name of keyword argument to use as timestamp can be set while initializing a RollingLogger.
+
+```julia
+julia> using Logging, LogRoller, Dates
+
+julia> logger = RollingLogger("/tmp/mylog.log", 1000, 3, Logging.Debug, timestamp_identifier=:clock);
+
+julia> with_logger(logger) do
+       @info("log with timestamp", clock=DateTime(2010, 1, 1, 1, 1, 1))
+       end
+
+shell> cat /tmp/mylog.log
+┌ Info: 2010-01-01T01:01:01: log with timestamp
+└ @ Main REPL[3]:2
+```
+
