@@ -3,11 +3,11 @@ uuid = "c41e01d8-14e5-11ea-185b-e7eabed7be4b"
 keywords = ["log", "rotate", "roller", "logrotate"]
 license = "MIT"
 authors = ["Tanmay Mohapatra <tanmaykm@gmail.com>"]
-version = "0.2.1"
+version = "0.2.2"
 
 [compat]
 julia = "1"
-CodecZlib = "0.6"
+CodecZlib = "0.6,0.7"
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
