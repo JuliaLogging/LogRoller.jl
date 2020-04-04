@@ -28,6 +28,22 @@ Rotates files as below:
 - ...
 - `<filename>_n.gz` : last rotated file is discarded when rotated
 
+
+## `RollingFileWriterTee`
+
+Tees raw log entries made a RollingFileWriter on to a Julia `AbstractLogger`.
+
+Each line of text is taken as a single log message.
+
+All log entries are made with the same log level, which can be provided during construction. It leaves
+further examination/parsing of log messages (to extract parameters, or detect exact log levels) to the
+downstream logger.
+
+Constructor parameters in addition to those for `RollingFileWriter`:
+- `logger`: instance of AbstractLogger to tee log entries to
+- `assumed_level`: level of the log messages to assume (default Info)
+
+
 ## `RollingLogger`
 
 A logger that implements `AbstractLogger` interface and uses a `RollingFileWriter` to provide log rotation.
@@ -62,6 +78,16 @@ Using `RollingFileWriter` with `stdout` and `stderr` streams
 julia> using LogRoller
 
 julia> io = RollingFileWriter("/tmp/mylog.log", 1000, 3);
+
+julia> run(pipeline(`myshellscript.sh`; stdout=io, stderr=io));
+```
+
+Using `RollingFileWriterTee`
+
+```julia
+julia> using LogRoller, Logging
+
+julia> io = RollingFileWriterTee("/tmp/mylog.log", 1000, 3, ConsoleLogger(stderr));
 
 julia> run(pipeline(`myshellscript.sh`; stdout=io, stderr=io));
 ```

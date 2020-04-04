@@ -73,6 +73,32 @@ function test_filewriter()
     end
 end
 
+function test_pipelined_tee()
+    mktempdir() do logdir
+        filename1 = "test1.log"
+        filename2 = "test2.log"
+        filepath1 = joinpath(logdir, filename1)
+        filepath2 = joinpath(logdir, filename2)
+        @test !isfile(filepath1)
+        @test !isfile(filepath2)
+
+        logger1io = open(filepath1, "w+")
+        logger1 = SimpleLogger(logger1io)
+        logger2 = RollingFileWriterTee(filepath2, 1000, 3, logger1, Logging.Info)
+
+        julia = joinpath(Sys.BINDIR, "julia")
+        cmd = pipeline(`$julia -e 'for i in 1:5 println(string("hello",i)) end; flush(stdout)'`; stdout=logger2, stderr=logger2)
+        run(cmd)
+
+        close(logger2)
+        close(logger1io)
+
+        @test isfile(filepath1)
+        @test isfile(filepath2)
+        @test (2*length(readlines(filepath2))) == length(readlines(filepath1)) # Julia logger entry will be two lines for every raw message
+    end
+end
+
 function test_logger()
     mktempdir() do logdir
         filename = "test.log"
@@ -249,6 +275,7 @@ function test_timestamp_handling()
 end
 
 test_filewriter()
+test_pipelined_tee()
 test_logger()
 test_process_streams()
 test_postrotate()
