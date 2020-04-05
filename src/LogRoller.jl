@@ -235,13 +235,15 @@ end
 
 function stream_process_logs(writer::RollingFileWriter)
     try
-        logline = readline(writer.procstream; keep=true)
-        while !eof(writer.procstream)
-            write(writer, logline)
-            if writer.procstreamteelogger !== nothing
-                @logmsg(writer.assumed_level, strip(logline))
-            end
+        while true
             logline = readline(writer.procstream; keep=true)
+            if !isempty(logline)
+                write(writer, logline)
+                if writer.procstreamteelogger !== nothing
+                    @logmsg(writer.assumed_level, strip(logline))
+                end
+            end
+            eof(writer.procstream) && break
         end
     finally
         close(writer.procstream)
