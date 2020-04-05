@@ -7,7 +7,7 @@ using Logging
 
 import Logging: shouldlog, min_enabled_level, catch_exceptions, handle_message
 import Base: write, close, rawhandle
-export RollingLogger, RollingFileWriter, postrotate
+export RollingLogger, RollingFileWriter, RollingFileWriterTee, postrotate
 
 const BUFFSIZE = 1024*16  # try and read 16K pages when possible
 
@@ -28,12 +28,14 @@ mutable struct RollingFileWriter <: IO
     lck::ReentrantLock
     procstream::Union{Nothing,Pipe}
     procstreamer::Union{Nothing,Task}
+    procstreamteelogger::Union{Nothing,AbstractLogger}
+    assumed_level::LogLevel
     postrotate::Union{Nothing,Function}
 
     function RollingFileWriter(filename::String, sizelimit::Int, nfiles::Int)
         stream = open(filename, "a")
         filesize = stat(stream).size
-        new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing, nothing)
+        new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing, nothing, Logging.Info, nothing)
     end
 end
 
@@ -48,6 +50,15 @@ function postrotate(fn::Function, io::RollingFileWriter)
 end
 
 """
+Tee all lines to the provided logger
+"""
+function tee(io::RollingFileWriter, logger::AbstractLogger, level::LogLevel)
+    io.procstreamteelogger = logger
+    io.assumed_level = level
+    io
+end
+
+"""
 Close any open file handle and streams.
 A closed object must not be used again.
 """
@@ -57,6 +68,7 @@ function close(io::RollingFileWriter)
         lock(io.lck) do
             io.procstream = nothing
             io.procstreamer = nothing
+            io.procstreamteelogger = nothing
         end
     end
     close(io.stream)
@@ -126,6 +138,24 @@ function rotate_file(io::RollingFileWriter)
     (io.postrotate === nothing) || io.postrotate(nthlogfile)
 
     nothing
+end
+
+"""
+Tees raw log entries made a RollingFileWriter on to a provided Julia AbstractLogger.
+
+Each line of text is taken as a single log message.
+
+All log entries are made with the same log level, which can be provided during construction. It leaves
+further examination/parsing of log messages (to extract parameters, or detect exact log levels) to the
+downstream logger.
+"""
+function RollingFileWriterTee(filename::String, sizelimit::Int, nfiles::Int, logger::AbstractLogger, assumed_level::LogLevel=Logging.Info)
+    io = RollingFileWriter(filename, sizelimit, nfiles)
+    RollingFileWriterTee(io, logger, assumed_level)
+end
+
+function RollingFileWriterTee(io::RollingFileWriter, logger::AbstractLogger, assumed_level::LogLevel=Logging.Info)
+    tee(io, logger, assumed_level)
 end
 
 """
@@ -205,10 +235,15 @@ end
 
 function stream_process_logs(writer::RollingFileWriter)
     try
-        bytes = readavailable(writer.procstream)
-        while !isempty(bytes)
-            write(writer, bytes)
-            bytes = readavailable(writer.procstream)
+        while true
+            logline = readline(writer.procstream; keep=true)
+            if !isempty(logline)
+                write(writer, logline)
+                if writer.procstreamteelogger !== nothing
+                    @logmsg(writer.assumed_level, strip(logline))
+                end
+            end
+            eof(writer.procstream) && break
         end
     finally
         close(writer.procstream)
@@ -225,7 +260,13 @@ function rawhandle(writer::RollingFileWriter)
             writer.procstream = Pipe()
             Base.link_pipe!(writer.procstream)
             writer.procstreamer = @async begin
-                stream_process_logs(writer)
+                if writer.procstreamteelogger !== nothing
+                    with_logger(writer.procstreamteelogger) do
+                        stream_process_logs(writer)
+                    end
+                else
+                    stream_process_logs(writer)
+                end
             end
         end
         return rawhandle(Base.pipe_writer(writer.procstream))
