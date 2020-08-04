@@ -32,7 +32,16 @@ mutable struct RollingFileWriter <: IO
     assumed_level::LogLevel
     postrotate::Union{Nothing,Function}
 
-    function RollingFileWriter(filename::String, sizelimit::Int, nfiles::Int)
+    function RollingFileWriter(filename::String, sizelimit::Int, nfiles::Int; rotateOnInit=true)
+        if rotateOnInit
+            if isfile(filename)
+                stream = open(filename, "a")
+                filesize = stat(stream).size
+                io = new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing, nothing, Logging.Info, nothing)
+                rotate_file(io)
+                return io
+            end
+        end
         stream = open(filename, "a")
         filesize = stat(stream).size
         new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing, nothing, Logging.Info, nothing)
@@ -168,8 +177,8 @@ mutable struct RollingLogger <: AbstractLogger
     message_limits::Dict{Any,Int}
     timestamp_identifier::Symbol
 end
-function RollingLogger(filename::String, sizelimit::Int, nfiles::Int, level=Logging.Info; timestamp_identifier::Symbol=:time)
-    stream = RollingFileWriter(filename, sizelimit, nfiles)
+function RollingLogger(filename::String, sizelimit::Int, nfiles::Int, level=Logging.Info; timestamp_identifier::Symbol=:time, rotateOnInit=true)
+    stream = RollingFileWriter(filename, sizelimit, nfiles,rotateOnInit=rotateOnInit)
     RollingLogger(stream, level, Dict{Any,Int}(), timestamp_identifier)
 end
 
