@@ -315,6 +315,73 @@ function test_json_format()
         @test dates[4] == testdt
         @test dates[5] == testdt
     end
+
+    mktempdir() do logdir
+        filename = "test.log"
+        filepath = joinpath(logdir, filename)
+
+        logger = RollingLogger(filepath, 20000, 3; format=:json)
+        with_logger(logger) do
+            for i in 1:4
+                @info("log message $i", time=time(), randval=rand(Int))
+            end
+            with_logger(current_logger()) do
+                @info("test nested with_logger", time=time())
+            end
+            @info rand(1000, 1000)
+            @info(Vector{Bool})
+            try
+                error("test exception")
+            catch ex
+                @error("caught an exception", ex)
+                @error("this is the exception with backtrace", exception=(ex,catch_backtrace()))
+            end
+            @warn("test other types", ptr1=Ptr{Nothing}(), ptr2=Ptr{Int}(10), sv=Core.svec(1,2,3), typ=String)
+        end
+        close(logger)
+
+        open(filepath) do readio
+            for idx in 1:4
+                entry = JSON.parse(readio)
+                @test entry["metadata"]["level"] == "Info"
+                @test entry["message"] == "log message $idx"
+            end
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Info"
+            @test entry["message"] == "test nested with_logger"
+
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Info"
+            @test length(entry["message"]) == (4*1024 + 3)
+
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Info"
+            @test entry["message"] == "Array{Bool,1}"
+
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Error"
+            @test entry["message"] == "caught an exception"
+            @test haskey(entry["keywords"], "ex")
+            @test haskey(entry["keywords"]["ex"], "msg")
+            @test entry["keywords"]["ex"]["msg"] == "test exception"
+
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Error"
+            @test entry["message"] == "this is the exception with backtrace"
+            @test haskey(entry["keywords"], "exception")
+            @test startswith(entry["keywords"]["exception"], "test exception\nStacktrace:")
+
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Warn"
+            @test entry["message"] == "test other types"
+            @test haskey(entry["keywords"], "ptr1")
+            @test haskey(entry["keywords"], "ptr2")
+            @test haskey(entry["keywords"], "sv")
+            @test haskey(entry["keywords"], "typ")
+            @test entry["keywords"]["sv"] == [1,2,3]
+            @test entry["keywords"]["typ"] == "String"
+        end
+    end
 end
 
 function test_size_limits()
