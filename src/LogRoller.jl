@@ -4,12 +4,20 @@ using Dates
 using Logging
 using CodecZlib
 using Logging
+using JSON
+using JSON.Serializations: CommonSerialization, StandardSerialization
+using JSON.Writer: StructuralContext
+import JSON: show_json
 
 import Logging: shouldlog, min_enabled_level, catch_exceptions, handle_message
 import Base: write, close, rawhandle
 export RollingLogger, RollingFileWriter, RollingFileWriterTee, postrotate
 
 const BUFFSIZE = 1024*16  # try and read 16K pages when possible
+const DEFAULT_MAX_LOG_ENTRY_SIZE = 256*1024
+
+include("limitio.jl")
+include("log_utils.jl")
 
 """
 A file writer that implements the `IO` interface, but only provides `write` methods.
@@ -159,18 +167,27 @@ function RollingFileWriterTee(io::RollingFileWriter, logger::AbstractLogger, ass
 end
 
 """
-RollingLogger(filename, sizelimit, nfiles, min_level=Info; timestamp_identifier::Symbol=:time)
+RollingLogger(filename, sizelimit, nfiles, min_level=Info; timestamp_identifier::Symbol=:time, format::Symbol=:console)
 Log into a log file. Rotate log file based on file size. Compress rotated logs.
+
+Logs can be formatted as JSON by setting the optional keyword argument `format` to `:json`. A JSON formatted log entry
+is a JSON object. It should have these keys (unless they are empty):
+The message part can contain the following keys unless they are empty:
+- `metadata`: event metadata e.g. timestamp, line, filename, ...
+- `message`: the log message string
+- `keywords`: any keywords provided
 """
 mutable struct RollingLogger <: AbstractLogger
     stream::RollingFileWriter
     min_level::LogLevel
     message_limits::Dict{Any,Int}
     timestamp_identifier::Symbol
+    format::Symbol
+    entry_size_limit::Int
 end
-function RollingLogger(filename::String, sizelimit::Int, nfiles::Int, level=Logging.Info; timestamp_identifier::Symbol=:time)
+function RollingLogger(filename::String, sizelimit::Int, nfiles::Int, level=Logging.Info; timestamp_identifier::Symbol=:time, format::Symbol=:console, entry_size_limit::Int=DEFAULT_MAX_LOG_ENTRY_SIZE)
     stream = RollingFileWriter(filename, sizelimit, nfiles)
-    RollingLogger(stream, level, Dict{Any,Int}(), timestamp_identifier)
+    RollingLogger(stream, level, Dict{Any,Int}(), timestamp_identifier, format, entry_size_limit)
 end
 
 """
@@ -215,21 +232,39 @@ function handle_message(logger::RollingLogger, level, message, _module, group, i
         logger.message_limits[id] = remaining - 1
         remaining > 0 || return
     end
-    buf = IOBuffer()
-    iob = IOContext(buf, logger.stream)
-    levelstr = level == Logging.Warn ? "Warning" : string(level)
-    timestamp, kwarg_timestamp = get_timestamp(logger, kwargs)
-    msglines = split(chomp(string(message)), '\n')
-    println(iob, "┌ ", levelstr, ": ", timestamp, ": ", msglines[1])
-    for i in 2:length(msglines)
-        println(iob, "│ ", msglines[i])
+
+    if logger.format === :json
+        timestamp, kwarg_timestamp = get_timestamp(logger, kwargs)
+        log = (level=level, message=message, _module=_module, group=group, id=id, filepath=filepath, line=line, kwargs=kwargs)
+        log = merge(log, [logger.timestamp_identifier=>timestamp])
+        logentry = IndexedLogEntry(log, Symbol[])
+        write(logger.stream, message_string(logentry, logger.entry_size_limit, true))
+    else # if logger.format === :console
+        buf = IOBuffer()
+        lim = LimitIO(buf, logger.entry_size_limit)
+        limited = false
+        try
+            iob = IOContext(lim, logger.stream)
+            levelstr = level == Logging.Warn ? "Warning" : string(level)
+            timestamp, kwarg_timestamp = get_timestamp(logger, kwargs)
+            msglines = split(chomp(string(message)), '\n')
+            println(iob, "┌ ", levelstr, ": ", timestamp, ": ", msglines[1])
+            for i in 2:length(msglines)
+                println(iob, "│ ", msglines[i])
+            end
+            for (key, val) in kwargs
+                kwarg_timestamp && (key === logger.timestamp_identifier) && continue
+                println(iob, "│   ", key, " = ", val)
+            end
+            println(iob, "└ @ ", something(_module, "nothing"), " ", something(filepath, "nothing"), ":", something(line, "nothing"))
+        catch ex
+            isa(ex, LimitIOException) || rethrow(ex)
+            limited = true
+        end
+        write(logger.stream, take!(buf))
+        limited && write(logger.stream, UInt8[0x0a])
     end
-    for (key, val) in kwargs
-        kwarg_timestamp && (key === logger.timestamp_identifier) && continue
-        println(iob, "│   ", key, " = ", val)
-    end
-    println(iob, "└ @ ", something(_module, "nothing"), " ", something(filepath, "nothing"), ":", something(line, "nothing"))
-    write(logger.stream, take!(buf))
+
     nothing
 end
 
