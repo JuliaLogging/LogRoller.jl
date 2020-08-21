@@ -159,6 +159,11 @@ function test_logger()
         @test stat(rolledfile(filepath, 3)).size > 0
         @test stat(rolledfile(filepath, 3)).size < 1000  # compressed
 
+        rm(rolledfile(filepath, 1))
+        logger_roi = RollingLogger(filepath, 1000, 3, rotateOnInit=true)
+        @test isfile(filepath)
+        @test isfile(rolledfile(filepath, 1))
+
         close(logger)
         @test !isopen(logger.stream.stream)
     end
