@@ -1,4 +1,4 @@
-using LogRoller, Test, Logging, Dates
+using LogRoller, Test, Logging, Dates, JSON
 
 rolledfile(path, n) = string(path, "_", n, ".gz")
 
@@ -260,6 +260,8 @@ function test_timestamp_handling()
             @info("with_timestamp", time=testdt, testarg=1)
             @test isfile(filepath)
         end
+        close(logger)
+
         filecontents = readlines(filepath)
         @test length(filecontents) == 12
         dates = DateTime[]
@@ -277,9 +279,170 @@ function test_timestamp_handling()
     end
 end
 
-test_filewriter()
-test_pipelined_tee()
-test_logger()
-test_process_streams()
-test_postrotate()
-test_timestamp_handling()
+function test_json_format()
+    mktempdir() do logdir
+        filename = "test.log"
+        filepath = joinpath(logdir, filename)
+
+        logger = RollingLogger(filepath, 2000, 3; format=:json)
+        testdt = DateTime(2000, 1, 1, 1, 1, 1, 1)
+        timenow = time()
+        dt_from_time = Dates.unix2datetime(timenow)
+        with_logger(logger) do
+            @info("without_timestamp")
+            @info("without_timestamp", testarg=1)
+            @info("with_timestamp", time=timenow)
+            @info("with_timestamp", time=testdt)
+            @info("with_timestamp", time=testdt, testarg=1)
+            @test isfile(filepath)
+        end
+        close(logger)
+
+        dates = DateTime[]
+        open(filepath) do readio
+            while !eof(readio)
+                try
+                    entry = JSON.parse(readio)
+                    push!(dates, DateTime(entry["metadata"]["time"]))
+                catch ex
+                    eof(readio) || rethrow()
+                end
+            end
+        end
+
+        @test length(dates) == 5
+        @test dates[3] == dt_from_time
+        @test dates[4] == testdt
+        @test dates[5] == testdt
+    end
+
+    mktempdir() do logdir
+        filename = "test.log"
+        filepath = joinpath(logdir, filename)
+
+        logger = RollingLogger(filepath, 20000, 3; format=:json)
+        with_logger(logger) do
+            for i in 1:4
+                @info("log message $i", time=time(), randval=rand(Int))
+            end
+            with_logger(current_logger()) do
+                @info("test nested with_logger", time=time())
+            end
+            @info rand(1000, 1000)
+            @info(Vector{Bool})
+            try
+                error("test exception")
+            catch ex
+                @error("caught an exception", ex)
+                @error("this is the exception with backtrace", exception=(ex,catch_backtrace()))
+            end
+            @warn("test other types", ptr1=Ptr{Nothing}(), ptr2=Ptr{Int}(10), sv=Core.svec(1,2,3), typ=String)
+        end
+        close(logger)
+
+        open(filepath) do readio
+            for idx in 1:4
+                entry = JSON.parse(readio)
+                @test entry["metadata"]["level"] == "Info"
+                @test entry["message"] == "log message $idx"
+            end
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Info"
+            @test entry["message"] == "test nested with_logger"
+
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Info"
+            @test length(entry["message"]) == (4*1024 + 3)
+
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Info"
+            @test entry["message"] == "Array{Bool,1}"
+
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Error"
+            @test entry["message"] == "caught an exception"
+            @test haskey(entry["keywords"], "ex")
+            @test haskey(entry["keywords"]["ex"], "msg")
+            @test entry["keywords"]["ex"]["msg"] == "test exception"
+
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Error"
+            @test entry["message"] == "this is the exception with backtrace"
+            @test haskey(entry["keywords"], "exception")
+            @test startswith(entry["keywords"]["exception"], "test exception\nStacktrace:")
+
+            entry = JSON.parse(readio)
+            @test entry["metadata"]["level"] == "Warn"
+            @test entry["message"] == "test other types"
+            @test haskey(entry["keywords"], "ptr1")
+            @test haskey(entry["keywords"], "ptr2")
+            @test haskey(entry["keywords"], "sv")
+            @test haskey(entry["keywords"], "typ")
+            @test entry["keywords"]["sv"] == [1,2,3]
+            @test entry["keywords"]["typ"] == "String"
+        end
+    end
+end
+
+function test_size_limits()
+    mktempdir() do logdir
+        filename = "test.log"
+        filepath = joinpath(logdir, filename)
+
+        logger = RollingLogger(filepath, 2000, 3; format=:json, entry_size_limit=250+length(filepath))
+        with_logger(logger) do
+            @info("short msg")
+            @info("short msg", v=1)
+            @info("long msg", v="-"^100)
+            @info("long msg " * "-"^100)
+        end
+        close(logger)
+
+        open(filepath) do readio
+            entry = JSON.parse(readio)
+            @test entry["message"] == "short msg"
+            @test !haskey(entry, "keywords")
+            entry = JSON.parse(readio)
+            @test entry["message"] == "short msg"
+            @test entry["keywords"]["v"] == 1
+            entry = JSON.parse(readio)
+            @test entry["message"] == "long msg"
+            @test !haskey(entry, "keywords")
+            entry = JSON.parse(readio)
+            @test !haskey(entry, "message")
+            @test !haskey(entry, "keywords")
+        end
+    end
+    mktempdir() do logdir
+        filename = "test.log"
+        filepath = joinpath(logdir, filename)
+
+        logger = RollingLogger(filepath, 2000, 3; format=:console, entry_size_limit=100)
+        with_logger(logger) do
+            @info("short msg")
+            @info("short msg", v=1)
+            @info("long msg", v="-"^100)
+            @info("long msg " * "-"^100)
+        end
+        close(logger)
+        filecontents = readlines(filepath)
+        @test length(filecontents) == 8
+    end
+end
+
+@testset "file writer" begin
+    test_filewriter()
+end
+@testset "pipelined tee" begin
+    test_pipelined_tee()
+end
+@testset "process streams" begin
+    test_process_streams()
+end
+@testset "logger" begin
+    test_logger()
+    test_timestamp_handling()
+    test_postrotate()
+    test_json_format()
+    test_size_limits()
+end

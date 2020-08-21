@@ -54,6 +54,11 @@ Construction parameters:
 - `nfiles`: number of rotated files to maintain
 - `level`: log level (default: `Logging.Info`)
 
+Constructor keyword parameters (described below):
+- `timestamp_identifier`
+- `format`
+- `entry_size_limit`
+
 ## Examples
 
 Using `RollingFileWriter`
@@ -147,3 +152,9 @@ shell> cat /tmp/mylog.log
 └ @ Main REPL[3]:2
 ```
 
+Logs can be formatted as JSON by setting the constructor keyword argument `format` to `:json`. A JSON formatted log entry is a JSON object having the below mentioned keys (unless they are empty):
+- `metadata`: event metadata e.g. timestamp, line, filename, ...
+- `message`: the log message string
+- `keywords`: any keywords provided
+
+Size of each log entry can be limited by specifying the constructor keyword argument `entry_size_limit`. It is set to 256KB by default.
