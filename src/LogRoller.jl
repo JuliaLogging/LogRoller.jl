@@ -40,7 +40,7 @@ mutable struct RollingFileWriter <: IO
     assumed_level::LogLevel
     postrotate::Union{Nothing,Function}
 
-    function RollingFileWriter(filename::String, sizelimit::Int, nfiles::Int; rotateOnInit=true)
+    function RollingFileWriter(filename::String, sizelimit::Int, nfiles::Int; rotateOnInit=false)
         stream = open(filename, "a")
         filesize = stat(stream).size
         io = new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing, nothing, Logging.Info, nothing)
