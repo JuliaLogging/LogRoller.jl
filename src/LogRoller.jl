@@ -41,18 +41,13 @@ mutable struct RollingFileWriter <: IO
     postrotate::Union{Nothing,Function}
 
     function RollingFileWriter(filename::String, sizelimit::Int, nfiles::Int; rotateOnInit=true)
-        if rotateOnInit
-            if isfile(filename)
-                stream = open(filename, "a")
-                filesize = stat(stream).size
-                io = new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing, nothing, Logging.Info, nothing)
-                rotate_file(io)
-                return io
-            end
-        end
         stream = open(filename, "a")
         filesize = stat(stream).size
-        new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing, nothing, Logging.Info, nothing)
+        io = new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing, nothing, Logging.Info, nothing)
+        if rotateOnInit && filesize > 0
+            rotate_file(io)
+        end
+        return io
     end
 end
 
