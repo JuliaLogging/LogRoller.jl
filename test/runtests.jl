@@ -361,7 +361,7 @@ function test_json_format()
 
             entry = JSON.parse(readio)
             @test entry["metadata"]["level"] == "Info"
-            @test entry["message"] == "Array{Bool,1}"
+            @test endswith(entry["message"], "Array{Bool,1}") # either "Array{Bool,1}" or "Vector{Bool} = Array{Bool,1}"
 
             entry = JSON.parse(readio)
             @test entry["metadata"]["level"] == "Error"
