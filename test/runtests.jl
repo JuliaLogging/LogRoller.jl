@@ -160,7 +160,7 @@ function test_logger()
         @test stat(rolledfile(filepath, 3)).size < 1000  # compressed
 
         rm(rolledfile(filepath, 1))
-        logger_roi = RollingLogger(filepath, 1000, 3, rotateOnInit=true)
+        logger_roi = RollingLogger(filepath, 1000, 3, rotate_on_init=true)
         @test isfile(filepath)
         @test isfile(rolledfile(filepath, 1))
 
@@ -361,7 +361,7 @@ function test_json_format()
 
             entry = JSON.parse(readio)
             @test entry["metadata"]["level"] == "Info"
-            @test entry["message"] == "Array{Bool,1}"
+            @test endswith(entry["message"], "Array{Bool,1}") # either "Array{Bool,1}" or "Vector{Bool} = Array{Bool,1}"
 
             entry = JSON.parse(readio)
             @test entry["metadata"]["level"] == "Error"
