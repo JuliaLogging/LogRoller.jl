@@ -258,7 +258,9 @@ function handle_message(logger::RollingLogger, level, message, _module, group, i
             end
             for (key, val) in kwargs
                 kwarg_timestamp && (key === logger.timestamp_identifier) && continue
-                println(iob, "│   ", key, " = ", val)
+                print(iob, "│   ", key, " = ")
+                Logging.showvalue(iob, val)
+                println(iob)
             end
             println(iob, "└ @ ", something(_module, "nothing"), " ", something(filepath, "nothing"), ":", something(line, "nothing"))
         catch ex

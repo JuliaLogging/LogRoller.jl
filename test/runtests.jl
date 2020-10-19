@@ -435,6 +435,43 @@ function test_size_limits()
     end
 end
 
+function test_exception_printing()
+    mktempdir() do logdir
+        filename = "test.log"
+        filepath = joinpath(logdir, filename)
+
+        logger = RollingLogger(filepath, 2000, 3; format=:json)
+        with_logger(logger) do
+            try
+                error("test exception")
+            catch ex
+                @error("caught exception", exception=(ex,catch_backtrace()))
+            end
+        end
+        close(logger)
+        open(filepath) do readio
+            entry = JSON.parse(readio)
+            lines = readlines(IOBuffer(entry["keywords"]["exception"]))
+            @test length(lines) > 10
+        end
+    end
+    mktempdir() do logdir
+        filename = "test.log"
+        filepath = joinpath(logdir, filename)
+
+        logger = RollingLogger(filepath, 2000, 3; format=:console)
+        with_logger(logger) do
+            try
+                error("test exception")
+            catch ex
+                @error("caught exception", exception=(ex,catch_backtrace()))
+            end
+        end
+        close(logger)
+        @test length(readlines(filepath)) > 10
+    end
+end
+
 @testset "file writer" begin
     test_filewriter()
 end
@@ -450,4 +487,6 @@ end
     test_postrotate()
     test_json_format()
     test_size_limits()
+    test_exception_printing()
 end
+
