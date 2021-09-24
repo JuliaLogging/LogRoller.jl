@@ -4,24 +4,25 @@ Handles Module types for now, more can be added later.
 """
 struct LogEntrySerialization <: CommonSerialization end
 
-show_json(io::StructuralContext, ::LogEntrySerialization, m::Module) = show_json(io, LogEntrySerialization(), string(m))
-show_json(io::StructuralContext, ::LogEntrySerialization, ptr::Ptr) = show_json(io, LogEntrySerialization(), string(ptr))
-show_json(io::StructuralContext, ::LogEntrySerialization, sv::Core.SimpleVector) = show_json(io, LogEntrySerialization(), [sv...])
-show_json(io::StructuralContext, ::LogEntrySerialization, typ::DataType) = show_json(io, LogEntrySerialization(), string(typ))
+show_json(io::StructuralContext, ser::LogEntrySerialization, m::Function) = show_json(io, ser, string(m))
+show_json(io::StructuralContext, ser::LogEntrySerialization, m::Module) = show_json(io, ser, string(m))
+show_json(io::StructuralContext, ser::LogEntrySerialization, ptr::Ptr) = show_json(io, ser, string(ptr))
+show_json(io::StructuralContext, ser::LogEntrySerialization, sv::Core.SimpleVector) = show_json(io, ser, [sv...])
+show_json(io::StructuralContext, ser::LogEntrySerialization, typ::DataType) = show_json(io, ser, string(typ))
 
-function show_json(io::StructuralContext, ::LogEntrySerialization, level::Logging.LogLevel)
+function show_json(io::StructuralContext, ser::LogEntrySerialization, level::Logging.LogLevel)
     levelstr = (level == Logging.Debug) ? "Debug" :
                (level == Logging.Info)  ? "Info" :
                (level == Logging.Warn)  ? "Warn" :
                (level == Logging.Error) ? "Error" :
                "LogLevel($(level.level))"
-    show_json(io, LogEntrySerialization(), levelstr)
+    show_json(io, ser, levelstr)
 end
 
-function show_json(io::StructuralContext, ::LogEntrySerialization, exception::Tuple{Exception,Any})
+function show_json(io::StructuralContext, ser::LogEntrySerialization, exception::Tuple{Exception,Any})
     iob = IOBuffer()
     Base.show_exception_stack(iob, [exception])
-    show_json(io, LogEntrySerialization(), String(take!(iob)))
+    show_json(io, ser, String(take!(iob)))
 end
 
 as_text(str::String) = str
