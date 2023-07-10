@@ -192,9 +192,12 @@ function test_process_streams()
         @test isfile(rolledfile(filepath, 1))
         @test !isfile(rolledfile(filepath, 2))
 
-        @test io.procstream !== nothing
-        @test io.procstreamer !== nothing
-        @test !istaskdone(io.procstreamer)
+        if VERSION < v"1.8"
+            # pipelined processes are handled differently in Julia 1.8 and later
+            @test io.procstream !== nothing
+            @test io.procstreamer !== nothing
+            @test !istaskdone(io.procstreamer)
+        end
 
         close(io)
         @test io.procstream === nothing
@@ -475,9 +478,14 @@ end
 @testset "file writer" begin
     test_filewriter()
 end
-@testset "pipelined tee" begin
-    test_pipelined_tee()
+
+if VERSION < v"1.8"
+    # pipelined tee logger is available only on Julia 1.7 and earlier
+    @testset "pipelined tee" begin
+        test_pipelined_tee()
+    end
 end
+
 @testset "process streams" begin
     test_process_streams()
 end

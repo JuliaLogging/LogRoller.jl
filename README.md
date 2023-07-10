@@ -43,6 +43,7 @@ Constructor parameters in addition to those for `RollingFileWriter`:
 - `logger`: instance of AbstractLogger to tee log entries to
 - `assumed_level`: level of the log messages to assume (default Info)
 
+Note: `RollingFileWriterTee` is supported only until Julia 1.7.
 
 ## `RollingLogger`
 
