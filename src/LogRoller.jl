@@ -94,8 +94,10 @@ write(io::RollingFileWriter, str::Union{SubString{String}, String}) = _write(io,
 write(io::RollingFileWriter, buff::Vector{UInt8}) = _write(io, buff)
 
 function _write(io::RollingFileWriter, args...)
+    bytes_written = 0
     lock(io.lck) do
-        io.filesize += write(io.stream, args...)
+        bytes_written += write(io.stream, args...)
+        io.filesize += bytes_written
         flush(io.stream)
         if io.filesize >= io.sizelimit
             with_logger(NullLogger()) do
@@ -103,6 +105,7 @@ function _write(io::RollingFileWriter, args...)
             end
         end
     end
+    return bytes_written
 end
 
 """
