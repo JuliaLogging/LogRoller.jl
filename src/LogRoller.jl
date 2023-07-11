@@ -11,7 +11,7 @@ import JSON: show_json
 
 import Logging: shouldlog, min_enabled_level, catch_exceptions, handle_message
 import Base: write, close, rawhandle
-export RollingLogger, RollingFileWriter, RollingFileWriterTee, postrotate
+export RollingLogger, RollingFileWriter, postrotate
 
 const BUFFSIZE = 1024*16  # try and read 16K pages when possible
 const DEFAULT_MAX_LOG_ENTRY_SIZE = 256*1024
@@ -34,16 +34,12 @@ mutable struct RollingFileWriter <: IO
     filesize::Int
     stream::IO
     lck::ReentrantLock
-    procstream::Union{Nothing,Pipe}
-    procstreamer::Union{Nothing,Task}
-    procstreamteelogger::Union{Nothing,AbstractLogger}
-    assumed_level::LogLevel
     postrotate::Union{Nothing,Function}
 
     function RollingFileWriter(filename::String, sizelimit::Int, nfiles::Int; rotate_on_init=false)
         stream = open(filename, "a")
         filesize = stat(stream).size
-        io = new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing, nothing, nothing, Logging.Info, nothing)
+        io = new(filename, sizelimit, nfiles, filesize, stream, ReentrantLock(), nothing)
         if rotate_on_init && filesize > 0
             rotate_file(io)
         end
@@ -62,27 +58,10 @@ function postrotate(fn::Function, io::RollingFileWriter)
 end
 
 """
-Tee all lines to the provided logger
-"""
-function tee(io::RollingFileWriter, logger::AbstractLogger, level::LogLevel)
-    io.procstreamteelogger = logger
-    io.assumed_level = level
-    io
-end
-
-"""
 Close any open file handle and streams.
 A closed object must not be used again.
 """
 function close(io::RollingFileWriter)
-    if io.procstream !== nothing
-        close(io.procstream)
-        lock(io.lck) do
-            io.procstream = nothing
-            io.procstreamer = nothing
-            io.procstreamteelogger = nothing
-        end
-    end
     close(io.stream)
 end
 
@@ -153,24 +132,6 @@ function rotate_file(io::RollingFileWriter)
     (io.postrotate === nothing) || io.postrotate(nthlogfile)
 
     nothing
-end
-
-"""
-Tees raw log entries made a RollingFileWriter on to a provided Julia AbstractLogger.
-
-Each line of text is taken as a single log message.
-
-All log entries are made with the same log level, which can be provided during construction. It leaves
-further examination/parsing of log messages (to extract parameters, or detect exact log levels) to the
-downstream logger.
-"""
-function RollingFileWriterTee(filename::String, sizelimit::Int, nfiles::Int, logger::AbstractLogger, assumed_level::LogLevel=Logging.Info)
-    io = RollingFileWriter(filename, sizelimit, nfiles)
-    RollingFileWriterTee(io, logger, assumed_level)
-end
-
-function RollingFileWriterTee(io::RollingFileWriter, logger::AbstractLogger, assumed_level::LogLevel=Logging.Info)
-    tee(io, logger, assumed_level)
 end
 
 """
@@ -275,46 +236,6 @@ function handle_message(logger::RollingLogger, level, message, _module, group, i
     end
 
     nothing
-end
-
-function stream_process_logs(writer::RollingFileWriter)
-    try
-        while true
-            logline = readline(writer.procstream; keep=true)
-            if !isempty(logline)
-                write(writer, logline)
-                if writer.procstreamteelogger !== nothing
-                    @logmsg(writer.assumed_level, strip(logline))
-                end
-            end
-            eof(writer.procstream) && break
-        end
-    finally
-        close(writer.procstream)
-        lock(writer.lck) do
-            writer.procstream = nothing
-            writer.procstreamer = nothing
-        end
-    end
-end
-
-function rawhandle(writer::RollingFileWriter)
-    lock(writer.lck) do
-        if (writer.procstream === nothing) || !isopen(Base.pipe_writer(writer.procstream))
-            writer.procstream = Pipe()
-            Base.link_pipe!(writer.procstream)
-            writer.procstreamer = @async begin
-                if writer.procstreamteelogger !== nothing
-                    with_logger(writer.procstreamteelogger) do
-                        stream_process_logs(writer)
-                    end
-                else
-                    stream_process_logs(writer)
-                end
-            end
-        end
-        return rawhandle(Base.pipe_writer(writer.procstream))
-    end
 end
 
 end # module
