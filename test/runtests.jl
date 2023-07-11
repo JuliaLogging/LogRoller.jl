@@ -73,35 +73,6 @@ function test_filewriter()
     end
 end
 
-function test_pipelined_tee()
-    mktempdir() do logdir
-        filename1 = "test1.log"
-        filename2 = "test2.log"
-        filepath1 = joinpath(logdir, filename1)
-        filepath2 = joinpath(logdir, filename2)
-        @test !isfile(filepath1)
-        @test !isfile(filepath2)
-
-        logger1io = open(filepath1, "w+")
-        logger1 = SimpleLogger(logger1io)
-        logger2 = RollingFileWriterTee(filepath2, 1000, 3, logger1, Logging.Info)
-
-        julia = joinpath(Sys.BINDIR, "julia")
-        cmd = pipeline(`$julia -e 'for i in 1:5 println(string("hello",i)) end; flush(stdout)'`; stdout=logger2, stderr=logger2)
-        run(cmd)
-
-        close(logger2)
-        close(logger1io)
-
-        @test isfile(filepath1)
-        @test isfile(filepath2)
-        @test (2*length(readlines(filepath2))) == length(readlines(filepath1)) # Julia logger entry will be two lines for every raw message
-        if !Sys.iswindows()    # streams do not seem to be flushed cleanly on Windows
-            @test length(readlines(filepath2)) == 5
-        end
-    end
-end
-
 function test_logger()
     mktempdir() do logdir
         filename = "test.log"
@@ -192,16 +163,7 @@ function test_process_streams()
         @test isfile(rolledfile(filepath, 1))
         @test !isfile(rolledfile(filepath, 2))
 
-        if VERSION < v"1.8"
-            # pipelined processes are handled differently in Julia 1.8 and later
-            @test io.procstream !== nothing
-            @test io.procstreamer !== nothing
-            @test !istaskdone(io.procstreamer)
-        end
-
         close(io)
-        @test io.procstream === nothing
-        @test io.procstreamer === nothing
     end
 end
 
@@ -479,16 +441,10 @@ end
     test_filewriter()
 end
 
-if VERSION < v"1.8"
-    # pipelined tee logger is available only on Julia 1.7 and earlier
-    @testset "pipelined tee" begin
-        test_pipelined_tee()
-    end
-end
-
 @testset "process streams" begin
     test_process_streams()
 end
+
 @testset "logger" begin
     test_logger()
     test_timestamp_handling()

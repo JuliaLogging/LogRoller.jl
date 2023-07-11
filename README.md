@@ -1,8 +1,7 @@
 # LogRoller.jl
 
-[![Build Status](https://travis-ci.org/tanmaykm/LogRoller.jl.png)](https://travis-ci.org/tanmaykm/LogRoller.jl) 
-[![Build Status](https://ci.appveyor.com/api/projects/status/github/tanmaykm/LogRoller.jl?branch=master&svg=true)](https://ci.appveyor.com/project/tanmaykm/logroller-jl/branch/master) 
-[![Coverage Status](https://coveralls.io/repos/github/tanmaykm/LogRoller.jl/badge.svg?branch=master)](https://coveralls.io/github/tanmaykm/LogRoller.jl?branch=master)
+[![Build Status](https://github.com/JuliaLogging/LogRoller.jl/workflows/CI/badge.svg)](https://github.com/JuliaLogging/LogRoller.jl/actions/?query=workflow%3ACI+branch%3Amaster)
+[![codecov.io](http://codecov.io/github/JuliaLogging/LogRoller.jl/coverage.svg?branch=main)](http://codecov.io/github/JuliaLogging/LogRoller.jl?branch=main)
 
 Provides:
 - `RollingFileWriter` - `IO` implementation to a file writer that rotates files based on file size.
@@ -27,23 +26,6 @@ Rotates files as below:
 - `<filename>_3.gz` : previous <filename>_2.gz rotated to <filename>_3.gz
 - ...
 - `<filename>_n.gz` : last rotated file is discarded when rotated
-
-
-## `RollingFileWriterTee`
-
-Tees raw log entries made a RollingFileWriter on to a Julia `AbstractLogger`.
-
-Each line of text is taken as a single log message.
-
-All log entries are made with the same log level, which can be provided during construction. It leaves
-further examination/parsing of log messages (to extract parameters, or detect exact log levels) to the
-downstream logger.
-
-Constructor parameters in addition to those for `RollingFileWriter`:
-- `logger`: instance of AbstractLogger to tee log entries to
-- `assumed_level`: level of the log messages to assume (default Info)
-
-Note: `RollingFileWriterTee` is supported only until Julia 1.7.
 
 ## `RollingLogger`
 
@@ -84,16 +66,6 @@ Using `RollingFileWriter` with `stdout` and `stderr` streams
 julia> using LogRoller
 
 julia> io = RollingFileWriter("/tmp/mylog.log", 1000, 3);
-
-julia> run(pipeline(`myshellscript.sh`; stdout=io, stderr=io));
-```
-
-Using `RollingFileWriterTee`
-
-```julia
-julia> using LogRoller, Logging
-
-julia> io = RollingFileWriterTee("/tmp/mylog.log", 1000, 3, ConsoleLogger(stderr));
 
 julia> run(pipeline(`myshellscript.sh`; stdout=io, stderr=io));
 ```
