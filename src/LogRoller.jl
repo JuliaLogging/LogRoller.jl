@@ -3,13 +3,12 @@ module LogRoller
 using Dates
 using Logging
 using CodecZlib
-using Logging
 using JSON
 using JSON.Serializations: CommonSerialization, StandardSerialization
 using JSON.Writer: StructuralContext
 import JSON: show_json
 
-import Logging: Logging, shouldlog, min_enabled_level, catch_exceptions, handle_message
+import Logging: shouldlog, min_enabled_level, catch_exceptions, handle_message
 import Base: write, close, rawhandle
 export RollingLogger, RollingFileWriter, postrotate
 
