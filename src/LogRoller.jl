@@ -3,7 +3,6 @@ module LogRoller
 using Dates
 using Logging
 using CodecZlib
-using Logging
 using JSON
 using JSON.Serializations: CommonSerialization, StandardSerialization
 using JSON.Writer: StructuralContext
@@ -15,6 +14,8 @@ export RollingLogger, RollingFileWriter, postrotate
 
 const BUFFSIZE = 1024*16  # try and read 16K pages when possible
 const DEFAULT_MAX_LOG_ENTRY_SIZE = 256*1024
+
+const showvalue = VERSION ≥ v"1.11.0-DEV.1786" ? Base.CoreLogging.showvalue : Logging.showvalue
 
 include("limitio.jl")
 include("log_utils.jl")
@@ -223,7 +224,7 @@ function handle_message(logger::RollingLogger, level, message, _module, group, i
             for (key, val) in kwargs
                 kwarg_timestamp && (key === logger.timestamp_identifier) && continue
                 print(iob, "│   ", key, " = ")
-                Logging.showvalue(iob, val)
+                showvalue(iob, val)
                 println(iob)
             end
             println(iob, "└ @ ", something(_module, "nothing"), " ", something(filepath, "nothing"), ":", something(line, "nothing"))
