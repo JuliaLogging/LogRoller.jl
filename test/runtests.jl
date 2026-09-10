@@ -1,4 +1,5 @@
 using LogRoller, Test, Logging, Dates, JSON
+@info "Testing LogRoller with JSON $(isdefined(Base, :pkgversion) ? pkgversion(JSON) : "(pre-1.9 julia)")"
 
 rolledfile(path, n) = string(path, "_", n, ".gz")
 
@@ -269,15 +270,9 @@ function test_json_format()
         close(logger)
 
         dates = DateTime[]
-        open(filepath) do readio
-            while !eof(readio)
-                try
-                    entry = JSON.parse(readio)
-                    push!(dates, DateTime(entry["metadata"]["time"]))
-                catch ex
-                    eof(readio) || rethrow()
-                end
-            end
+        for line in eachline(filepath)
+            entry = JSON.parse(line)
+            push!(dates, DateTime(entry["metadata"]["time"]))
         end
 
         @test length(dates) == 5
@@ -312,36 +307,36 @@ function test_json_format()
 
         open(filepath) do readio
             for idx in 1:4
-                entry = JSON.parse(readio)
+                entry = JSON.parse(readline(readio))
                 @test entry["metadata"]["level"] == "Info"
                 @test entry["message"] == "log message $idx"
             end
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             @test entry["metadata"]["level"] == "Info"
             @test entry["message"] == "test nested with_logger"
 
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             @test entry["metadata"]["level"] == "Info"
             @test length(entry["message"]) == (4*1024 + 3)
 
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             @test entry["metadata"]["level"] == "Info"
             @test endswith(entry["message"], "Array{Bool,1}") || startswith(entry["message"], "Vector{Bool}") # either "Array{Bool,1}" or "Vector{Bool} = Array{Bool,1} or Vector{Bool} (alias for...)"
 
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             @test entry["metadata"]["level"] == "Error"
             @test entry["message"] == "caught an exception"
             @test haskey(entry["keywords"], "ex")
             @test haskey(entry["keywords"]["ex"], "msg")
             @test entry["keywords"]["ex"]["msg"] == "test exception"
 
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             @test entry["metadata"]["level"] == "Error"
             @test entry["message"] == "this is the exception with backtrace"
             @test haskey(entry["keywords"], "exception")
             @test startswith(entry["keywords"]["exception"], "test exception\nStacktrace:")
 
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             @test entry["metadata"]["level"] == "Warn"
             @test entry["message"] == "test other types"
             @test haskey(entry["keywords"], "ptr1")
@@ -369,16 +364,16 @@ function test_size_limits()
         close(logger)
 
         open(filepath) do readio
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             @test entry["message"] == "short msg"
             @test !haskey(entry, "keywords")
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             @test entry["message"] == "short msg"
             @test entry["keywords"]["v"] == 1
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             @test entry["message"] == "long msg"
             @test !haskey(entry, "keywords")
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             @test !haskey(entry, "message")
             @test !haskey(entry, "keywords")
         end
@@ -405,7 +400,9 @@ function test_exception_printing()
         filename = "test.log"
         filepath = joinpath(logdir, filename)
 
-        logger = RollingLogger(filepath, 2000, 3; format=:json)
+        # well above the size of one entry: a backtrace long enough to hit the limit
+        # would rotate the only entry into the .gz and leave the active file empty
+        logger = RollingLogger(filepath, 20000, 3; format=:json)
         with_logger(logger) do
             try
                 error("test exception")
@@ -415,7 +412,7 @@ function test_exception_printing()
         end
         close(logger)
         open(filepath) do readio
-            entry = JSON.parse(readio)
+            entry = JSON.parse(readline(readio))
             lines = readlines(IOBuffer(entry["keywords"]["exception"]))
             @test length(lines) > 10
         end
@@ -424,7 +421,7 @@ function test_exception_printing()
         filename = "test.log"
         filepath = joinpath(logdir, filename)
 
-        logger = RollingLogger(filepath, 2000, 3; format=:console)
+        logger = RollingLogger(filepath, 20000, 3; format=:console)
         with_logger(logger) do
             try
                 error("test exception")
@@ -434,6 +431,47 @@ function test_exception_printing()
         end
         close(logger)
         @test length(readlines(filepath)) > 10
+    end
+end
+
+# Values that have no JSON form of their own, and floats JSON refuses to write
+# by default, must come out the same on every supported JSON.jl version.
+function test_json_values()
+    mktempdir() do logdir
+        filepath = joinpath(logdir, "test.log")
+        logger = RollingLogger(filepath, 20000, 3; format=:json)
+        with_logger(logger) do
+            @info("floats", nan=NaN, inf=Inf, neginf=-Inf, f32=Float32(NaN), ok=1.5, vec=[NaN, 2.0])
+            @logmsg(Logging.LogLevel(5), "custom level")
+            @info("types", m=Base, f=sin, t=Vector{Int}, sv=Core.svec(1, "a"), ptr=Ptr{Int}(0))
+            @info("multi\nline\nmessage", note="a\nb")
+        end
+        close(logger)
+
+        lines = readlines(filepath)
+        @test length(lines) == 4   # one JSON document per line, newlines escaped
+        entries = JSON.parse.(lines)
+
+        kw = entries[1]["keywords"]
+        @test kw["nan"] === nothing
+        @test kw["inf"] === nothing
+        @test kw["neginf"] === nothing
+        @test kw["f32"] === nothing
+        @test kw["ok"] == 1.5
+        @test kw["vec"] == [nothing, 2.0]
+
+        @test entries[2]["metadata"]["level"] == "LogLevel(5)"
+        @test entries[2]["message"] == "custom level"
+
+        kw = entries[3]["keywords"]
+        @test kw["m"] == "Base"
+        @test kw["f"] == "sin"
+        @test kw["t"] == "Vector{Int64}"
+        @test kw["sv"] == [1, "a"]
+        @test startswith(kw["ptr"], "Ptr{Int64}")
+
+        @test entries[4]["message"] == "multi\nline\nmessage"
+        @test entries[4]["keywords"]["note"] == "a\nb"
     end
 end
 
@@ -452,5 +490,6 @@ end
     test_json_format()
     test_size_limits()
     test_exception_printing()
+    test_json_values()
 end
 

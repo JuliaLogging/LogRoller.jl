@@ -1,28 +1,44 @@
 """
-Custom JSON serializer for log entries.
-Handles Module types for now, more can be added later.
+Custom JSON serialization of log entries.
+
+Values that have no natural JSON form are written as their printed form, or
+as an array in the case of `Core.SimpleVector`. Non-finite floats are written
+as `null`, which is also what the default JSON writer did before JSON.jl 1.0.
+
+JSON.jl 1.x customises writing through a `JSONStyle` and `lower` methods,
+pre-1.0 through a `Serialization` and `show_json` methods; `LogEntrySerialization`
+is one or the other depending on the JSON version loaded, and `write_json`
+is the single entry point the rest of the package uses.
 """
-struct LogEntrySerialization <: CommonSerialization end
+struct LogEntrySerialization <: (JSON_V1 ? JSON.JSONStyle : CommonSerialization) end
 
-show_json(io::StructuralContext, ser::LogEntrySerialization, m::Function) = show_json(io, ser, string(m))
-show_json(io::StructuralContext, ser::LogEntrySerialization, m::Module) = show_json(io, ser, string(m))
-show_json(io::StructuralContext, ser::LogEntrySerialization, ptr::Ptr) = show_json(io, ser, string(ptr))
-show_json(io::StructuralContext, ser::LogEntrySerialization, sv::Core.SimpleVector) = show_json(io, ser, [sv...])
-show_json(io::StructuralContext, ser::LogEntrySerialization, typ::DataType) = show_json(io, ser, string(typ))
+const LoweredTypes = Union{Function, Module, Ptr, Core.SimpleVector, DataType, Logging.LogLevel, Tuple{Exception,Any}}
 
-function show_json(io::StructuralContext, ser::LogEntrySerialization, level::Logging.LogLevel)
-    levelstr = (level == Logging.Debug) ? "Debug" :
-               (level == Logging.Info)  ? "Info" :
-               (level == Logging.Warn)  ? "Warn" :
-               (level == Logging.Error) ? "Error" :
-               "LogLevel($(level.level))"
-    show_json(io, ser, levelstr)
-end
-
-function show_json(io::StructuralContext, ser::LogEntrySerialization, exception::Tuple{Exception,Any})
+_lower(m::Function) = string(m)
+_lower(m::Module) = string(m)
+_lower(ptr::Ptr) = string(ptr)
+_lower(sv::Core.SimpleVector) = [sv...]
+_lower(typ::DataType) = string(typ)
+_lower(level::Logging.LogLevel) =
+    (level == Logging.Debug) ? "Debug" :
+    (level == Logging.Info)  ? "Info" :
+    (level == Logging.Warn)  ? "Warn" :
+    (level == Logging.Error) ? "Error" :
+    "LogLevel($(level.level))"
+function _lower(exception::Tuple{Exception,Any})
     iob = IOBuffer()
     Base.show_exception_stack(iob, [exception])
-    show_json(io, ser, String(take!(iob)))
+    String(take!(iob))
+end
+
+@static if JSON_V1
+    JSON.lower(::LogEntrySerialization, x::LoweredTypes) = _lower(x)
+    # pre-1.0 JSON wrote NaN and Inf as null; 1.x refuses them unless told otherwise
+    JSON.lower(::LogEntrySerialization, x::AbstractFloat) = isfinite(x) ? x : nothing
+    write_json(io::IO, x) = JSON.json(io, x; style=LogEntrySerialization())
+else
+    show_json(io::StructuralContext, ser::LogEntrySerialization, x::LoweredTypes) = show_json(io, ser, _lower(x))
+    write_json(io::IO, x) = JSON.show_json(io, LogEntrySerialization(), x)
 end
 
 as_text(str::String) = str
@@ -106,7 +122,7 @@ function message_string(message::Dict{Symbol,Any}, size_limit::Int, newline::Boo
     iob = IOBuffer()
     lim = LimitIO(iob, size_limit)
     try
-        JSON.show_json(lim, LogEntrySerialization(), message)
+        write_json(lim, message)
         newline && write(lim, '\n')
     catch ex
         if isa(ex, LimitIOException)
