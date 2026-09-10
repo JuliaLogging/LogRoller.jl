@@ -4,9 +4,15 @@ using Dates
 using Logging
 using CodecZlib
 using JSON
-using JSON.Serializations: CommonSerialization, StandardSerialization
-using JSON.Writer: StructuralContext
-import JSON: show_json
+
+# JSON.jl 1.0 replaced the `Serializations`/`StructuralContext`/`show_json` writer
+# customisation with `JSONStyle` + `lower`. Both are supported; see log_utils.jl.
+const JSON_V1 = isdefined(JSON, :JSONStyle)
+@static if !JSON_V1
+    using JSON.Serializations: CommonSerialization
+    using JSON.Writer: StructuralContext
+    import JSON: show_json
+end
 
 import Logging: shouldlog, min_enabled_level, catch_exceptions, handle_message
 import Base: write, close, rawhandle
