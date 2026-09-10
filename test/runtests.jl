@@ -400,7 +400,9 @@ function test_exception_printing()
         filename = "test.log"
         filepath = joinpath(logdir, filename)
 
-        logger = RollingLogger(filepath, 2000, 3; format=:json)
+        # well above the size of one entry: a backtrace long enough to hit the limit
+        # would rotate the only entry into the .gz and leave the active file empty
+        logger = RollingLogger(filepath, 20000, 3; format=:json)
         with_logger(logger) do
             try
                 error("test exception")
@@ -419,7 +421,7 @@ function test_exception_printing()
         filename = "test.log"
         filepath = joinpath(logdir, filename)
 
-        logger = RollingLogger(filepath, 2000, 3; format=:console)
+        logger = RollingLogger(filepath, 20000, 3; format=:console)
         with_logger(logger) do
             try
                 error("test exception")
